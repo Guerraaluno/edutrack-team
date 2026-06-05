@@ -78,12 +78,29 @@ def tela_acesso():
             nome = st.text_input('Nome')
             email_c = st.text_input('E-mail')
             pass_c = st.text_input('Senha', type='password')
+            pass_c2 = st.text_input('Confirmar Senha')
+
             if st.form_submit_button('Cadastrar'):
-                res = requests.post(f'{BASE_URL}/auth/signup', json={'name': nome, 'email': email_c, 'password': pass_c})
-                if res.status_code == 200:
-                    st.success('Conta criada! Agora faça o login.')
+                if not nome or not email_c or not pass_c or not pass_c2:
+                    st.error('Preencha todos os campos.')
+                elif pass_c != pass_c2:
+                    st.error('As senhas não coincidem.')
                 else:
-                    st.error('Erro ao cadastrar usuário.')
+                    # Verificar se nome já existe
+                    usuarios_existentes = api_get('user')  # Qual é o endpoint?
+                    nomes_usados = [u['name'] for u in usuarios_existentes]
+                
+                    if nome in nomes_usados:
+                        st.error('Este nome de usuário já está em uso.')
+                    else:
+                        res = requests.post(f'{BASE_URL}/auth/signup', json={'name': nome, 'email': email_c, 'password': pass_c})
+                        if res.status_code == 200:
+                            st.success('Conta criada! Agora faça o login.')
+                        elif res.status_code == 409:  # Conflito (já existe)
+                            st.error('Nome ou e-mail já cadastrado.')
+                        else:
+                            st.error(f'Erro ao cadastrar usuário (Código {res.status_code}).')
+                
 
 # ------------------------------------------------
 # MÓDULOS CRUD PARA PROFESSORES, DISCIPLINAS
