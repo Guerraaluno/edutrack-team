@@ -3,7 +3,7 @@
 # ------------------------------------------------
 
 import pandas as pd
-import plotly.express as px
+import plotly as px
 import requests
 import streamlit as st
 
@@ -139,7 +139,7 @@ def modulo_professores():
 # GESTÃO DE DISCIPLINAS
 
 def modulo_disciplinas():
-    st.header('Minhas Disciplina')
+    st.header('Minhas Disciplinas')
     profs = api_get('professores')
     
     if not profs:
@@ -156,13 +156,16 @@ def modulo_disciplinas():
             st.rerun()
 
     # [R]EAD
+    # GET request to fetch subjects connected to the authenticated user_id
     discs = api_get('disciplinas')
+    
     if discs:
+        st.subheader('Disciplinas Cadastradas')
         df_d = pd.DataFrame(discs)
         df_p = pd.DataFrame(profs)
-        # Junta os nomes para exibição
+        # Join names to display subjects and their respective teachers
         df_view = df_d.merge(df_p[['id', 'nome']], left_on='prof_id', right_on='id', suffixes=('', '_prof'))
-        st.dataframe(df_view[['id', 'nome', 'nome_prof']], use_container_width=True, hide_index=True)      
+        st.dataframe(df_view[['nome', 'nome_prof']], use_container_width=True, hide_index=True)      
 
         # [D]ELETE
         id_del = st.number_input('ID para remover', min_value=1, step=1)
