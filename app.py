@@ -58,6 +58,20 @@ def api_delete(endpoint, id):
 
 def tela_acesso():
     st.title('Portal Acadêmico Personalizado')
+    
+    if st.session_state.page == 'forgot':
+        st.header('Recuperar Senha')
+        email_recuperado = st.text_input('Digite o e-mail cadastrado', key='email_rec')
+        if st.button('Enviar instruções'):
+            emails_existentes = api_get('user')  # Qual é o endpoint?
+            email_usado = [u['email'] for u in emails_existentes]
+
+            st.success('Se o e-mail estiver cadastrado, você receberá instruções em breve.')
+        if st.button('Voltar ao Login'):
+            st.session_state.page = 'login'
+            st.rerun()
+        return
+
     tab_login, tab_cadastro = st.tabs(['Entrar', 'Criar Minha Conta'])
 
     with tab_login:
@@ -72,6 +86,10 @@ def tela_acesso():
                     st.rerun()
                 else:
                     st.error('Credenciais inválidas.')
+            
+            if st.form_submit_button('Esqueci a Senha'):
+                st.session_state.page = 'forgot'
+                st.rerun()
 
     with tab_cadastro:
         with st.form('cadastro_form'):
@@ -229,6 +247,8 @@ def modulo_dashboard():
 
 st.set_page_config(page_title='EduTrack AI', layout='wide')
 
+if 'page' not in st.session_state:
+    st.session_state.page = 'login'
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
