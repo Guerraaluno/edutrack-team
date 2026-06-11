@@ -166,7 +166,8 @@ def modulo_professores():
         df = pd.DataFrame(dados)
         st.subheader('Seus Professores Cadastrados')
         # Editor de dados para facilitar a vida do aluno
-        df_editado = st.data_editor(df[['id', 'nome', 'email']], use_container_width=True, hide_index=True, num_rows='dynamic')
+        df_display = df.reindex(columns=['id', 'nome', 'email'])
+        df_editado = st.data_editor(df_display, use_container_width=True, hide_index=True, num_rows='dynamic')
 
         if st.button('Salvar Alterações/Exclusões em Professores'):
             # Para simplificar, atualizamos o que foi alterado
@@ -204,9 +205,16 @@ def modulo_disciplinas():
         st.subheader('Disciplinas Cadastradas')
         df_d = pd.DataFrame(discs)
         df_p = pd.DataFrame(profs)
+
+        # Prepara o DataFrame de professores renomeando colunas para evitar conflitos de nomes no merge
+        df_p_sub = df_p.reindex(columns=['id', 'nome']).rename(columns={'id': 'p_id', 'nome': 'nome_prof'})
+
+        # Garante que as colunas necessárias existam em df_d para evitar erro no merge
+        df_d = df_d.reindex(columns=['nome', 'prof_id'])
+
         # Join names to display subjects and their respective teachers
-        df_view = df_d.merge(df_p[['id', 'nome']], left_on='prof_id', right_on='id', suffixes=('', '_prof'))
-        st.dataframe(df_view[['nome', 'nome_prof']], use_container_width=True, hide_index=True)      
+        df_view = df_d.merge(df_p_sub, left_on='prof_id', right_on='p_id', how='left')
+        st.dataframe(df_view.reindex(columns=['nome', 'nome_prof']), use_container_width=True, hide_index=True)      
 
         # [D]ELETE
         id_del = st.number_input('ID para remover', min_value=1, step=1)
@@ -239,7 +247,8 @@ def modulo_tarefas():
     if tarefas:
         df_t = pd.DataFrame(tarefas)
         st.subheader('Quadro de Notas')
-        st.dataframe(df_t[['id', 'nome', 'nota']], use_container_width=True, hide_index=True)
+        df_display = df_t.reindex(columns=['id', 'nome', 'nota'])
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
 
         # [D]ELETE
         id_del_t = st.number_input('ID da Tarefa para remover', min_value=1, step=1)
@@ -257,8 +266,8 @@ def modulo_dashboard():
         st.info('Cadastre dados para visualizar seu desempenho gráfico.')
         return
 
-    df_t = pd.DataFrame(tarefas)
-    df_d = pd.DataFrame(discs)
+    df_t = pd.DataFrame(tarefas).reindex(columns=['id', 'nome', 'nota', 'disc_id'])
+    df_d = pd.DataFrame(discs).reindex(columns=['id', 'nome'])
     df_plot = df_t.merge(df_d, left_on='disc_id', right_on='id', suffixes=('_t', '_d'))
     fig = px.bar(df_plot, x='nome_t', y='nota', color='nome_d', 
                  title='Minhas Notas por Matéria', text_auto=True)
