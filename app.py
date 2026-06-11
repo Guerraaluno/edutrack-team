@@ -256,8 +256,19 @@ def modulo_tarefas():
     tarefas = api_get('tarefas')
     if tarefas:
         df_t = pd.DataFrame(tarefas)
+        df_d = pd.DataFrame(discs)
+
+        # Prepara o DataFrame de disciplinas para evitar conflitos de nomes no merge
+        df_d_sub = df_d.reindex(columns=['id', 'nome']).rename(columns={'id': 'd_id', 'nome': 'nome_disc'})
+        
+        # Garante que disc_id existe e faz o merge para obter o nome da disciplina
+        df_t = df_t.reindex(columns=['id', 'nome', 'nota', 'disc_id'])
+        df_merged = df_t.merge(df_d_sub, left_on='disc_id', right_on='d_id', how='left')
+
         st.subheader('Quadro de Notas')
-        df_display = df_t.reindex(columns=['id', 'nome', 'nota'])
+        # Seleciona colunas e renomeia para melhor legibilidade
+        df_display = df_merged.reindex(columns=['id', 'nome', 'nome_disc', 'nota'])
+        df_display = df_display.rename(columns={'nome': 'Tarefa', 'nome_disc': 'Disciplina', 'nota': 'Nota'})
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
         # [D]ELETE
