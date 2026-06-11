@@ -73,6 +73,29 @@ def tela_acesso():
         return
 
     tab_login, tab_cadastro = st.tabs(['Entrar', 'Criar Minha Conta'])
+    st.markdown("""
+<style>  
+/* Fundo dos inputs (email e senha) */
+input, .stTextInput input {
+    background-color: #1E1E1E !important;  /* cinza bem mais escuro */
+    color: white !important;
+    border: 1px solid #444 !important;
+    border-radius: 8px;
+}
+
+/* Quando clica no input */
+input:focus {
+    background-color: #151515 !important;
+    border: 1px solid #2563EB !important;
+}
+
+/* Label (E-mail / Senha) */
+label {
+    color: #E0E0E0 !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
     with tab_login:
         with st.form('login_form'):
@@ -142,10 +165,8 @@ def modulo_professores():
     if dados:
         df = pd.DataFrame(dados)
         st.subheader('Seus Professores Cadastrados')
-        # Safely select columns using reindex
-        df_display = df.reindex(columns=['id', 'nome', 'email'])
         # Editor de dados para facilitar a vida do aluno
-        df_editado = st.data_editor(df_display, use_container_width=True, hide_index=True, num_rows='dynamic')
+        df_editado = st.data_editor(df[['id', 'nome', 'email']], use_container_width=True, hide_index=True, num_rows='dynamic')
 
         if st.button('Salvar Alterações/Exclusões em Professores'):
             # Para simplificar, atualizamos o que foi alterado
@@ -169,19 +190,10 @@ def modulo_disciplinas():
     # [C]REATE
     with st.expander('➕ Nova Disciplina'):
         nome_d = st.text_input('Nome da Matéria')
-        hours = st.text_input('Carga Horária')
-        course = st.text_input('Curso')
-        credits = st.text_input('Créditos')
         opcoes_p = {p['nome']: p['id'] for p in profs}
         p_escolhido = st.selectbox('Professor Responsável', options=list(opcoes_p.keys()))
         if st.button('Salvar Disciplina'):
-            api_post('disciplinas', {
-                'nome': nome_d, 
-                'prof_id': opcoes_p[p_escolhido],
-                'hours': hours,
-                'course': course,
-                'credits': credits
-            })
+            api_post('disciplinas', {'nome': nome_d, 'prof_id': opcoes_p[p_escolhido]})
             st.rerun()
 
     # [R]EAD
@@ -192,21 +204,9 @@ def modulo_disciplinas():
         st.subheader('Disciplinas Cadastradas')
         df_d = pd.DataFrame(discs)
         df_p = pd.DataFrame(profs)
-        
-        # Prepare professors DataFrame safely using reindex to avoid KeyError
-        df_p_sub = df_p.reindex(columns=['id', 'nome']).rename(columns={'id': 'p_id', 'nome': 'nome_prof'})
-        
-        # Mesclamos as disciplinas com os professores de forma explícita
-        if 'prof_id' in df_d.columns:
-            df_view = df_d.merge(df_p_sub, left_on='prof_id', right_on='p_id', how='left')
-        else:
-            df_view = df_d
-        
-        # Renomeamos o nome original da disciplina e exibimos a tabela
-        df_view = df_view.rename(columns={'nome': 'nome_disc'})
-        # Safely select columns for display; missing columns will be filled with NaN instead of crashing
-        cols_to_show = ['nome_disc', 'hours', 'course', 'credits', 'nome_prof']
-        st.dataframe(df_view.reindex(columns=cols_to_show), use_container_width=True, hide_index=True)
+        # Join names to display subjects and their respective teachers
+        df_view = df_d.merge(df_p[['id', 'nome']], left_on='prof_id', right_on='id', suffixes=('', '_prof'))
+        st.dataframe(df_view[['nome', 'nome_prof']], use_container_width=True, hide_index=True)      
 
         # [D]ELETE
         id_del = st.number_input('ID para remover', min_value=1, step=1)
@@ -239,8 +239,7 @@ def modulo_tarefas():
     if tarefas:
         df_t = pd.DataFrame(tarefas)
         st.subheader('Quadro de Notas')
-        df_display = df_t.reindex(columns=['id', 'nome', 'nota'])
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_t[['id', 'nome', 'nota']], use_container_width=True, hide_index=True)
 
         # [D]ELETE
         id_del_t = st.number_input('ID da Tarefa para remover', min_value=1, step=1)
@@ -270,6 +269,21 @@ def modulo_dashboard():
 # ------------------------------------------
 
 st.set_page_config(page_title='EduTrack AI', layout='wide')
+st.markdown("""
+<style> 
+.stApp {
+    background-color: #2C2C2C;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+input {
+    border: 2px solid #2563EB !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
@@ -281,14 +295,22 @@ if not st.session_state.logged_in:
 else:
     with st.sidebar:
         st.title('EduTrack AI')
-        menu = st.radio('Gerenciar:', ['Painel Geral', 'Professores', 'Disciplinas', 'Tarefas/Notas'])
+        menu = st.radio('Gerenciar:', ['Painel Geral', 'Professores 👤', 'Disciplinas 📚', 'Tarefas/Notas 📝'])
         st.markdown('---')
+        st.markdown("""
+<style>
+div.stButton button {
+    background-color: #DC2626;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
         if st.button('Sair'):
             st.session_state.clear()
             st.rerun()
 
     match menu:
         case 'Painel Geral': modulo_dashboard()
-        case 'Professores': modulo_professores()
-        case 'Disciplinas': modulo_disciplinas()
-        case 'Tarefas/Notas': modulo_tarefas()
+        case 'Professores 👤': modulo_professores()
+        case 'Disciplinas 📚': modulo_disciplinas()
+        case 'Tarefas/Notas 📝': modulo_tarefas()
