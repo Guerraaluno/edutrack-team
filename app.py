@@ -3,7 +3,7 @@
 # ------------------------------------------------
 
 import pandas as pd
-import plotly as px
+import plotly.express as px
 import requests
 import streamlit as st
 
@@ -191,10 +191,16 @@ def modulo_disciplinas():
     # [C]REATE
     with st.expander('➕ Nova Disciplina'):
         nome_d = st.text_input('Nome da Matéria')
+        hours = st.text_input('Carga Horária')
+        course = st.text_input('Curso')
+        credits = st.text_input('Créditos')
         opcoes_p = {p['nome']: p['id'] for p in profs}
         p_escolhido = st.selectbox('Professor Responsável', options=list(opcoes_p.keys()))
         if st.button('Salvar Disciplina'):
-            api_post('disciplinas', {'nome': nome_d, 'prof_id': opcoes_p[p_escolhido]})
+            api_post('disciplinas', {
+                'nome': nome_d, 
+                'prof_id': opcoes_p[p_escolhido],
+                'hours': hours, 'course': course, 'credits': credits})
             st.rerun()
 
     # [R]EAD
@@ -209,12 +215,16 @@ def modulo_disciplinas():
         # Prepara o DataFrame de professores renomeando colunas para evitar conflitos de nomes no merge
         df_p_sub = df_p.reindex(columns=['id', 'nome']).rename(columns={'id': 'p_id', 'nome': 'nome_prof'})
 
-        # Garante que as colunas necessárias existam em df_d para evitar erro no merge
-        df_d = df_d.reindex(columns=['nome', 'prof_id'])
+        # Garante que as colunas necessárias existam em df_d para evitar erro no merge e inclui as novas colunas
+        df_d = df_d.reindex(columns=['nome', 'prof_id', 'hours', 'course', 'credits'])
 
         # Join names to display subjects and their respective teachers
         df_view = df_d.merge(df_p_sub, left_on='prof_id', right_on='p_id', how='left')
-        st.dataframe(df_view.reindex(columns=['nome', 'nome_prof']), use_container_width=True, hide_index=True)      
+        
+        # Renomeia o nome original da disciplina e exibe a tabela
+        df_view = df_view.rename(columns={'nome': 'nome_disc'})
+        cols_to_show = ['nome_disc', 'hours', 'course', 'credits', 'nome_prof']
+        st.dataframe(df_view.reindex(columns=cols_to_show), use_container_width=True, hide_index=True)      
 
         # [D]ELETE
         id_del = st.number_input('ID para remover', min_value=1, step=1)
