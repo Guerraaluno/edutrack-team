@@ -1,2 +1,6 @@
 .venv/
+<<<<<<< HEAD
 .streamlit/secrets.toml
+=======
+.streamlit/secrets.toml
+>>>>>>> 58784937fb2a93bcf4cdbb677a47772300cb422f
