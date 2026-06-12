@@ -10,6 +10,8 @@ import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 from dotenv import load_dotenv
+from streamlit_cookies_manager import CookieManager
+
 SENDGRID_API_KEY = st.secrets["SENDGRID_API_KEY"]
 
 # ------------------------------------------------
@@ -18,6 +20,14 @@ SENDGRID_API_KEY = st.secrets["SENDGRID_API_KEY"]
 
 # Substitua pela SUA URL real do grupo de API no Xano
 BASE_URL = 'https://x8ki-letl-twmt.n7.xano.io/api:brtRNGSH'
+
+# ------------------------------------------------
+# COOKIE MANAGER
+# ------------------------------------------------
+
+cookies = CookieManager()
+if not cookies.ready():
+    st.stop()  # Aguarda o cookie manager estar pronto
 
 # ------------------------------------------------
 # FUNÇÕES DE CONEXÃO E UTILITÁRIOS
@@ -111,6 +121,8 @@ def reset_password_page():
             if response.status_code == 200:
                 st.success("Senha alterada! Faça login novamente.")
                 st.session_state.clear()
+                cookies['auth_token'] = ''  # <-- limpa cookie
+                cookies.save()
                 st.session_state.page = "login"
                 st.rerun()
             else:
@@ -213,8 +225,11 @@ label {
             if st.form_submit_button('Acessar Meu Painel'):
                 res = requests.post(f'{BASE_URL}/auth/login', json={'email': email, 'password': senha})
                 if res.status_code == 200:
-                    st.session_state.auth_token = res.json().get('authToken')
+                    token = res.json().get('authToken')
+                    st.session_state.auth_token = token
                     st.session_state.logged_in = True
+                    cookies['auth_token'] = token # <-- salvar token no cookie
+                    cookies.save()
                     st.rerun()
                 else:
                     st.error('Credenciais inválidas.')
@@ -394,6 +409,12 @@ input {
 </style>
 """, unsafe_allow_html=True)
 
+# restaurar sessão via cookie (se ainda não logado)
+if 'logged_in' not in st.session_state and cookies.get('auth_token'):
+    # Opcional: validar token com Xano. Por simplicidade, restauramos.
+    st.session_state.auth_token = cookies['auth_token']
+    st.session_state.logged_in = True
+
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
 
@@ -416,6 +437,8 @@ div.stButton button {
 </style>
 """, unsafe_allow_html=True)
         if st.button('Sair'):
+            cookies['auth_token'] = ''
+            cookies.save()
             st.session_state.clear()
             st.rerun()
 
