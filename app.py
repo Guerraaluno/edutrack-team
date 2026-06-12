@@ -225,7 +225,7 @@ label {
             if st.form_submit_button('Acessar Meu Painel'):
                 res = requests.post(f'{BASE_URL}/auth/login', json={'email': email, 'password': senha})
                 if res.status_code == 200:
-                    token = res.json().get('authToken')
+                    token = res.json().get('authToken') 
                     st.session_state.auth_token = token
                     st.session_state.logged_in = True
                     cookies['auth_token'] = token # <-- salvar token no cookie
@@ -437,9 +437,21 @@ div.stButton button {
 </style>
 """, unsafe_allow_html=True)
         if st.button('Sair'):
+            # 1. Limpa o cookie (remove o token)
             cookies['auth_token'] = ''
             cookies.save()
-            st.session_state.clear()
+    
+            # 2. Limpa apenas as variáveis de sessão relacionadas ao login
+            st.session_state.logged_in = False
+            st.session_state.auth_token = None
+            st.session_state.page = 'login'
+    
+            # 3. Remove outras chaves que possam interferir (opcional)
+            for key in ['polling_active', 'polling_email', 'reset_email', 'reset_token']:
+                if key in st.session_state:
+                    del st.session_state[key]
+    
+            # 4. Força a recarga do app
             st.rerun()
 
     match menu:
