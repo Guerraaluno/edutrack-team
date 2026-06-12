@@ -120,10 +120,20 @@ def reset_password_page():
             )
             if response.status_code == 200:
                 st.success("Senha alterada! Faça login novamente.")
-                st.session_state.clear()
+
+                # Limpeza seletiva
+                keys_to_clear = ['auth_token', 'logged_in', 'reset_email', 
+                                 'polling_active', 'polling_email']
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
                 cookies['auth_token'] = ''  # <-- limpa cookie
                 cookies.save()
                 st.session_state.page = "login"
+                if cookies.get('auth_token'):
+                    cookies['auth_token'] = ''
+                    cookies.save()
                 st.rerun()
             else:
                 erro_msg = response.json().get("message", "Erro desconhecido")
