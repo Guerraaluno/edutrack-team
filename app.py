@@ -6,6 +6,11 @@ import pandas as pd
 import plotly as px
 import requests
 import streamlit as st
+import os
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from dotenv import load_dotenv
+SENDGRID_API_KEY = st.secrets["SENDGRID_API_KEY"]
 
 # ------------------------------------------------
 # CONFIGURAÇÃO DA API XANO
@@ -53,6 +58,70 @@ def api_delete(endpoint, id):
     return requests.delete(f'{BASE_URL}/{endpoint}/{id}', headers=get_headers())
 
 # ------------------------------------------------
+# SISTEMA DE RECUPERAÇÂO DE SENHA
+# ------------------------------------------------
+
+def send_reset_email(email):
+    xano_reset_link = f"{BASE_URL}/reset-password-request?email={email}"
+
+    message = Mail(
+        from_email='edutrackguerra@gmail.com',
+        to_emails=email,
+        subject='Recuperação de senha - EduTrack TEAM',
+        html_content=f"""
+        <p>Recebemos uma solicitação para redefinir sua senha.</p>
+        <p>Clique no link abaixo para autorizar a troca:</p>
+        <p><a href="{xano_reset_link}">{xano_reset_link}</a></p>
+        <p>Após clicar, volte para o aplicativo e aguarde alguns segundos.</p>
+        <p>Se você não solicitou, ignore este e-mail.</p>
+        """
+    )
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        if response.status_code == 202:
+            return True, "E-mail enviado com sucesso"
+        else:
+            return False, f"Falha no envio (código {response.status_code})"
+    except Exception as e:
+        return False, f"Erro ao enviar: {str(e)}"
+
+def reset_password_page():
+    st.header("Criar nova senha")
+    email = st.session_state.get("reset_email", "")
+    st.write(f"Usuário: **{email}**")
+
+    nova_senha = st.text_input("Nova senha", type="password")
+    confirmar = st.text_input("Confirmar senha", type="password")
+
+    if st.button("Salvar nova senha"):
+        if not nova_senha or not confirmar:
+            st.error("Preencha ambos os campos.")
+        elif nova_senha != confirmar:
+            st.error("As senhas não coincidem.")
+        else:
+            # Atualiza a senha no Xano e reseta o reset_requested
+            response = requests.post(
+            f"{BASE_URL}/public/reset-password",
+                json={
+                    "email": email,
+                    "new_password": nova_senha
+                }
+            )
+            if response.status_code == 200:
+                st.success("Senha alterada! Faça login novamente.")
+                st.session_state.clear()
+                st.session_state.page = "login"
+                st.rerun()
+            else:
+                erro_msg = response.json().get("message", "Erro desconhecido")
+                st.error(f"Erro ao atualizar senha: {erro_msg}")
+
+    if st.button("Cancelar"):
+        st.session_state.page = "login"
+        st.rerun()
+
+# ------------------------------------------------
 # SISTEMA DE AUTENTICAÇÃO
 # ------------------------------------------------
 
@@ -62,11 +131,51 @@ def tela_acesso():
     if st.session_state.page == 'forgot':
         st.header('Recuperar Senha')
         email_recuperado = st.text_input('Digite o e-mail cadastrado', key='email_rec')
-        if st.button('Enviar instruções'):
-            emails_existentes = api_get('user')  # Qual é o endpoint?
-            email_usado = [u['email'] for u in emails_existentes]
 
-            st.success('Se o e-mail estiver cadastrado, você receberá instruções em breve.')
+        if st.button('Enviar instruções'):
+            usuarios = api_get('user')  # Qual é o endpoint?
+            if not any(u['email'].lower() == email_recuperado.lower() for u in usuarios):
+
+                st.success('Se o e-mail estiver cadastrado, você receberá instruções em breve.')
+
+            else:
+                sucesso, mensagem = send_reset_email(email_recuperado)
+            if sucesso:
+                st.success("Se o e-mail estiver cadastrado, você receberá instruções em breve.")
+            # Inicia o polling
+                st.session_state.polling_active = True
+                st.session_state.polling_email = email_recuperado
+                st.rerun()
+            else:
+                st.error(f"Erro ao enviar: {mensagem}")
+
+        if st.session_state.get("polling_active", False):
+            status_placeholder = st.empty()
+            status_placeholder.info(f"Aguardando você clicar no link enviado para {st.session_state.polling_email}...")
+
+            import time
+            max_attempts = 30   # 30 * 3 = 90 segundos
+            for tentativa in range(max_attempts):
+                # Busca o usuário atualizado no Xano
+                usuarios = api_get("user")
+                user = next((u for u in usuarios if u["email"].lower() == st.session_state.polling_email.lower()), None)
+
+                if user and user.get("reset_requested") == True:
+                    status_placeholder.success("Redirecionando para criar nova senha...")
+                    st.session_state.page = "reset_password"
+                    st.session_state.reset_email = user["email"]
+                    st.session_state.polling_active = False
+                    st.rerun()
+
+                status_placeholder.text(f"Verificando... ({tentativa+1}/{max_attempts})")
+                time.sleep(3)
+
+            # Se chegou aqui, o tempo esgotou
+            st.warning("Tempo esgotado. Clique em 'Enviar instruções' novamente se necessário.")
+            st.session_state.polling_active = False
+            st.rerun()
+
+
         if st.button('Voltar ao Login'):
             st.session_state.page = 'login'
             st.rerun()
@@ -287,11 +396,12 @@ input {
 
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
 
-if not st.session_state.logged_in:
-    tela_acesso()
+if not st.session_state.get('logged_in', False):
+    if st.session_state.page == 'reset_password':
+        reset_password_page()
+    else:
+        tela_acesso()
 else:
     with st.sidebar:
         st.title('EduTrack AI')
