@@ -148,7 +148,7 @@ def reset_password_page():
 # ------------------------------------------------
 
 def tela_acesso():
-    st.title('Portal Acadêmico Personalizado')
+    st.title('Portal Edutrack')
     
     if st.session_state.page == 'forgot':
         st.header('Recuperar Senha')
