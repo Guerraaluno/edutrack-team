@@ -3,9 +3,14 @@
 # ------------------------------------------------
 
 import pandas as pd
-import plotly.express as px
+import plotly as px
 import requests
 import streamlit as st
+import os
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from dotenv import load_dotenv
+SENDGRID_API_KEY = st.secrets["SENDGRID_API_KEY"]
 
 # ------------------------------------------------
 # CONFIGURAÇÃO DA API XANO
@@ -53,6 +58,70 @@ def api_delete(endpoint, id):
     return requests.delete(f'{BASE_URL}/{endpoint}/{id}', headers=get_headers())
 
 # ------------------------------------------------
+# SISTEMA DE RECUPERAÇÂO DE SENHA
+# ------------------------------------------------
+
+def send_reset_email(email):
+    xano_reset_link = f"{BASE_URL}/reset-password-request?email={email}"
+
+    message = Mail(
+        from_email='edutrackguerra@gmail.com',
+        to_emails=email,
+        subject='Recuperação de senha - EduTrack TEAM',
+        html_content=f"""
+        <p>Recebemos uma solicitação para redefinir sua senha.</p>
+        <p>Clique no link abaixo para autorizar a troca:</p>
+        <p><a href="{xano_reset_link}">{xano_reset_link}</a></p>
+        <p>Após clicar, volte para o aplicativo e aguarde alguns segundos.</p>
+        <p>Se você não solicitou, ignore este e-mail.</p>
+        """
+    )
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        if response.status_code == 202:
+            return True, "E-mail enviado com sucesso"
+        else:
+            return False, f"Falha no envio (código {response.status_code})"
+    except Exception as e:
+        return False, f"Erro ao enviar: {str(e)}"
+
+def reset_password_page():
+    st.header("Criar nova senha")
+    email = st.session_state.get("reset_email", "")
+    st.write(f"Usuário: **{email}**")
+
+    nova_senha = st.text_input("Nova senha", type="password")
+    confirmar = st.text_input("Confirmar senha", type="password")
+
+    if st.button("Salvar nova senha"):
+        if not nova_senha or not confirmar:
+            st.error("Preencha ambos os campos.")
+        elif nova_senha != confirmar:
+            st.error("As senhas não coincidem.")
+        else:
+            # Atualiza a senha no Xano e reseta o reset_requested
+            response = requests.post(
+            f"{BASE_URL}/public/reset-password",
+                json={
+                    "email": email,
+                    "new_password": nova_senha
+                }
+            )
+            if response.status_code == 200:
+                st.success("Senha alterada! Faça login novamente.")
+                st.session_state.clear()
+                st.session_state.page = "login"
+                st.rerun()
+            else:
+                erro_msg = response.json().get("message", "Erro desconhecido")
+                st.error(f"Erro ao atualizar senha: {erro_msg}")
+
+    if st.button("Cancelar"):
+        st.session_state.page = "login"
+        st.rerun()
+
+# ------------------------------------------------
 # SISTEMA DE AUTENTICAÇÃO
 # ------------------------------------------------
 
@@ -62,11 +131,51 @@ def tela_acesso():
     if st.session_state.page == 'forgot':
         st.header('Recuperar Senha')
         email_recuperado = st.text_input('Digite o e-mail cadastrado', key='email_rec')
-        if st.button('Enviar instruções'):
-            emails_existentes = api_get('user')  # Qual é o endpoint?
-            email_usado = [u['email'] for u in emails_existentes]
 
-            st.success('Se o e-mail estiver cadastrado, você receberá instruções em breve.')
+        if st.button('Enviar instruções'):
+            usuarios = api_get('user')  # Qual é o endpoint?
+            if not any(u['email'].lower() == email_recuperado.lower() for u in usuarios):
+
+                st.success('Se o e-mail estiver cadastrado, você receberá instruções em breve.')
+
+            else:
+                sucesso, mensagem = send_reset_email(email_recuperado)
+            if sucesso:
+                st.success("Se o e-mail estiver cadastrado, você receberá instruções em breve.")
+            # Inicia o polling
+                st.session_state.polling_active = True
+                st.session_state.polling_email = email_recuperado
+                st.rerun()
+            else:
+                st.error(f"Erro ao enviar: {mensagem}")
+
+        if st.session_state.get("polling_active", False):
+            status_placeholder = st.empty()
+            status_placeholder.info(f"Aguardando você clicar no link enviado para {st.session_state.polling_email}...")
+
+            import time
+            max_attempts = 30   # 30 * 3 = 90 segundos
+            for tentativa in range(max_attempts):
+                # Busca o usuário atualizado no Xano
+                usuarios = api_get("user")
+                user = next((u for u in usuarios if u["email"].lower() == st.session_state.polling_email.lower()), None)
+
+                if user and user.get("reset_requested") == True:
+                    status_placeholder.success("Redirecionando para criar nova senha...")
+                    st.session_state.page = "reset_password"
+                    st.session_state.reset_email = user["email"]
+                    st.session_state.polling_active = False
+                    st.rerun()
+
+                status_placeholder.text(f"Verificando... ({tentativa+1}/{max_attempts})")
+                time.sleep(3)
+
+            # Se chegou aqui, o tempo esgotou
+            st.warning("Tempo esgotado. Clique em 'Enviar instruções' novamente se necessário.")
+            st.session_state.polling_active = False
+            st.rerun()
+
+
         if st.button('Voltar ao Login'):
             st.session_state.page = 'login'
             st.rerun()
@@ -166,8 +275,7 @@ def modulo_professores():
         df = pd.DataFrame(dados)
         st.subheader('Seus Professores Cadastrados')
         # Editor de dados para facilitar a vida do aluno
-        df_display = df.reindex(columns=['id', 'nome', 'email'])
-        df_editado = st.data_editor(df_display, use_container_width=True, hide_index=True, num_rows='dynamic')
+        df_editado = st.data_editor(df[['id', 'nome', 'email']], use_container_width=True, hide_index=True, num_rows='dynamic')
 
         if st.button('Salvar Alterações/Exclusões em Professores'):
             # Para simplificar, atualizamos o que foi alterado
@@ -191,16 +299,10 @@ def modulo_disciplinas():
     # [C]REATE
     with st.expander('➕ Nova Disciplina'):
         nome_d = st.text_input('Nome da Matéria')
-        hours = st.text_input('Carga Horária')
-        course = st.text_input('Curso')
-        credits = st.text_input('Créditos')
         opcoes_p = {p['nome']: p['id'] for p in profs}
         p_escolhido = st.selectbox('Professor Responsável', options=list(opcoes_p.keys()))
         if st.button('Salvar Disciplina'):
-            api_post('disciplinas', {
-                'nome': nome_d, 
-                'prof_id': opcoes_p[p_escolhido],
-                'hours': hours, 'course': course, 'credits': credits})
+            api_post('disciplinas', {'nome': nome_d, 'prof_id': opcoes_p[p_escolhido]})
             st.rerun()
 
     # [R]EAD
@@ -211,20 +313,9 @@ def modulo_disciplinas():
         st.subheader('Disciplinas Cadastradas')
         df_d = pd.DataFrame(discs)
         df_p = pd.DataFrame(profs)
-
-        # Prepara o DataFrame de professores renomeando colunas para evitar conflitos de nomes no merge
-        df_p_sub = df_p.reindex(columns=['id', 'nome']).rename(columns={'id': 'p_id', 'nome': 'nome_prof'})
-
-        # Garante que as colunas necessárias existam em df_d para evitar erro no merge e inclui as novas colunas
-        df_d = df_d.reindex(columns=['nome', 'prof_id', 'hours', 'course', 'credits'])
-
         # Join names to display subjects and their respective teachers
-        df_view = df_d.merge(df_p_sub, left_on='prof_id', right_on='p_id', how='left')
-        
-        # Renomeia o nome original da disciplina e exibe a tabela
-        df_view = df_view.rename(columns={'nome': 'nome_disc'})
-        cols_to_show = ['nome_disc', 'hours', 'course', 'credits', 'nome_prof']
-        st.dataframe(df_view.reindex(columns=cols_to_show), use_container_width=True, hide_index=True)      
+        df_view = df_d.merge(df_p[['id', 'nome']], left_on='prof_id', right_on='id', suffixes=('', '_prof'))
+        st.dataframe(df_view[['nome', 'nome_prof']], use_container_width=True, hide_index=True)      
 
         # [D]ELETE
         id_del = st.number_input('ID para remover', min_value=1, step=1)
@@ -256,20 +347,8 @@ def modulo_tarefas():
     tarefas = api_get('tarefas')
     if tarefas:
         df_t = pd.DataFrame(tarefas)
-        df_d = pd.DataFrame(discs)
-
-        # Prepara o DataFrame de disciplinas para evitar conflitos de nomes no merge
-        df_d_sub = df_d.reindex(columns=['id', 'nome']).rename(columns={'id': 'd_id', 'nome': 'nome_disc'})
-        
-        # Garante que disc_id existe e faz o merge para obter o nome da disciplina
-        df_t = df_t.reindex(columns=['id', 'nome', 'nota', 'disc_id'])
-        df_merged = df_t.merge(df_d_sub, left_on='disc_id', right_on='d_id', how='left')
-
         st.subheader('Quadro de Notas')
-        # Seleciona colunas e renomeia para melhor legibilidade
-        df_display = df_merged.reindex(columns=['id', 'nome', 'nome_disc', 'nota'])
-        df_display = df_display.rename(columns={'nome': 'Tarefa', 'nome_disc': 'Disciplina', 'nota': 'Nota'})
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_t[['id', 'nome', 'nota']], use_container_width=True, hide_index=True)
 
         # [D]ELETE
         id_del_t = st.number_input('ID da Tarefa para remover', min_value=1, step=1)
@@ -287,8 +366,8 @@ def modulo_dashboard():
         st.info('Cadastre dados para visualizar seu desempenho gráfico.')
         return
 
-    df_t = pd.DataFrame(tarefas).reindex(columns=['id', 'nome', 'nota', 'disc_id'])
-    df_d = pd.DataFrame(discs).reindex(columns=['id', 'nome'])
+    df_t = pd.DataFrame(tarefas)
+    df_d = pd.DataFrame(discs)
     df_plot = df_t.merge(df_d, left_on='disc_id', right_on='id', suffixes=('_t', '_d'))
     fig = px.bar(df_plot, x='nome_t', y='nota', color='nome_d', 
                  title='Minhas Notas por Matéria', text_auto=True)
@@ -317,11 +396,12 @@ input {
 
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
 
-if not st.session_state.logged_in:
-    tela_acesso()
+if not st.session_state.get('logged_in', False):
+    if st.session_state.page == 'reset_password':
+        reset_password_page()
+    else:
+        tela_acesso()
 else:
     with st.sidebar:
         st.title('EduTrack AI')
